@@ -1,0 +1,38 @@
+# --- Delphi: saída do compilador ---
+Win32/
+Win64/
+*.dcu
+*.exe
+*.dll
+*.bpl
+*.dcp
+*.map
+*.drc
+*.rsm
+*.tds
+*.obj
+
+# --- Delphi: arquivos da IDE (por máquina/usuário) ---
+__history/
+__recovery/
+*.dproj.local
+*.groupproj.local
+*.identcache
+*.dsk
+*.stat
+*.~*
+*.bak
+*.tvsconfig
+ModelSupport_*/
+
+# --- Bancos Firebird (configuração e cópias de teste) ---
+*.fdb
+*.FDB
+*.gbk
+*.fbk
+
+# --- Planilhas e documentos do cliente (dados reais, arquivos grandes) ---
+docs/**/*.xls
+docs/**/*.xlsx
+docs/**/*.doc
+docs/**/*.docx
