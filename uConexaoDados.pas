@@ -17,7 +17,7 @@ type
     Porta: Integer;
     Banco: string;
     Usuario: string;
-    Senha: string;    // sempre em texto puro na memória; criptografada só no banco
+    Senha: string;    // texto puro (também no banco)
     Charset: string;
     Dialeto: Integer;
     class function Novo: TConexaoDados; static;

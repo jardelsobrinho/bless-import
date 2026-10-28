@@ -8,7 +8,6 @@ uses
   uFormBase in 'FormsBase\uFormBase.pas' {frmFormBase},
   uFormTabBase in 'FormsBase\uFormTabBase.pas' {frmFormTabBase},
   uFormModalBase in 'FormsBase\uFormModalBase.pas' {frmFormModalBase},
-  uCriptografia in 'Utils\uCriptografia.pas',
   uDmConexao in 'uDmConexao.pas' {dmConexao: TDataModule},
   uConexaoDados in 'uConexaoDados.pas',
   uConexoesDm in 'uConexoesDm.pas' {dmConexoes: TDataModule},

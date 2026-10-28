@@ -30,7 +30,7 @@ implementation
 {$R *.dfm}
 
 uses
-  uDmConexao, uCriptografia;
+  uDmConexao;
 
 procedure TdmConexoes.DataModuleCreate(Sender: TObject);
 begin
@@ -83,7 +83,7 @@ begin
     Result.Porta := vQry.FieldByName('PORTA').AsInteger;
     Result.Banco := vQry.FieldByName('BANCO').AsString;
     Result.Usuario := vQry.FieldByName('USUARIO').AsString;
-    Result.Senha := TCriptografia.Descriptografar(vQry.FieldByName('SENHA').AsString);
+    Result.Senha := vQry.FieldByName('SENHA').AsString;
     Result.Charset := vQry.FieldByName('CHARSET').AsString;
     Result.Dialeto := vQry.FieldByName('DIALETO').AsInteger;
   finally
@@ -153,7 +153,7 @@ begin
     vQry.ParamByName('PORTA').AsInteger := ADados.Porta;
     vQry.ParamByName('BANCO').AsString := Trim(ADados.Banco);
     vQry.ParamByName('USUARIO').AsString := Trim(ADados.Usuario);
-    vQry.ParamByName('SENHA').AsString := TCriptografia.Criptografar(ADados.Senha);
+    vQry.ParamByName('SENHA').AsString := ADados.Senha;
     vQry.ParamByName('CHARSET').AsString := Trim(ADados.Charset);
     vQry.ParamByName('DIALETO').AsInteger := ADados.Dialeto;
 
