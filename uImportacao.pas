@@ -44,6 +44,8 @@ type
     mmoDetalhe: TMemo;
     tabErros: TTabSheet;
     grdErros: TStringGrid;
+    tabIgnoradas: TTabSheet;
+    grdIgnoradas: TStringGrid;
     dlgAbrir: TOpenDialog;
     procedure FormCreate(Sender: TObject);
     procedure cbxPerfilDropDown(Sender: TObject);
@@ -75,6 +77,7 @@ type
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure HabilitarControles(AHabilitar: Boolean);
     procedure MostrarErrosImportacao(const AErros: TArray<TErroImportacao>);
+    procedure MostrarIgnoradas(const AIgnoradas: TArray<TLinhaIgnorada>);
   public
     // Chamado pelo histórico: deixa a tela pronta para continuar a execução a partir da linha indicada
     procedure PrepararRetomada(AIdExecucao, AIdPerfil: Integer; const AArquivo: string; ALinhaInicio: Integer);
@@ -125,6 +128,7 @@ begin
   LimparGrade(grdProblemas, ['Gravidade', 'Campo', 'Problema']);
   LimparGrade(grdPrevia, ['Linha', 'Situação']);
   LimparGrade(grdErros, ['Linha', 'Campo', 'Tipo de erro', 'Valor recebido', 'Mensagem']);
+  LimparGrade(grdIgnoradas, ['Linha', 'Motivo', 'Campos-chave']);
   CarregarPerfis;
   pcResultado.ActivePage := tabPrevia;
 end;
@@ -599,6 +603,7 @@ var
   vProblema: TProblemaPerfil;
   vResumo: TResumoImportacao;
   vErros: TArray<TErroImportacao>;
+  vIgnoradas: TArray<TLinhaIgnorada>;
   vMensagem, vInicioLinhas: string;
 begin
   if FImportando or not Preparar then
@@ -657,7 +662,7 @@ begin
             AResumo.Atualizadas, AResumo.Ignoradas, AResumo.Validadas, AResumo.ComErro]);
           Application.ProcessMessages;
           ACancelar := FCancelar;
-        end, vErros, FRetomadaExecucao, FRetomadaLinha);
+        end, vErros, vIgnoradas, FRetomadaExecucao, FRetomadaLinha);
       // Retomada usada: a próxima importação desta tela é normal (para continuar de novo, use o histórico)
       LimparRetomada;
     except
@@ -674,18 +679,21 @@ begin
   end;
 
   MostrarErrosImportacao(vErros);
+  MostrarIgnoradas(vIgnoradas);
   lblResumo.Caption := Format('Execução %d: %s  |  lidas: %d  |  inseridas: %d  |  atualizadas: %d  |  ' +
     'ignoradas: %d  |  validadas: %d  |  com erro: %d  |  vazias: %d',
     [vResumo.IdExecucao, cSTATUS_EXECUCAO[vResumo.Status].Nome, vResumo.Lidas, vResumo.Inseridas,
     vResumo.Atualizadas, vResumo.Ignoradas, vResumo.Validadas, vResumo.ComErro, vResumo.Vazias]);
   if Length(vErros) > 0 then
-    pcResultado.ActivePage := tabErros;
+    pcResultado.ActivePage := tabErros
+  else if Length(vIgnoradas) > 0 then
+    pcResultado.ActivePage := tabIgnoradas;
 
   vMensagem := Format('%s' + sLineBreak + sLineBreak +
     'Linhas lidas: %d' + sLineBreak +
     'Inseridas: %d' + sLineBreak +
     'Atualizadas: %d' + sLineBreak +
-    'Ignoradas (já existiam / não encontradas): %d' + sLineBreak +
+    'Ignoradas (já existiam / não encontradas): %d (veja a aba Ignoradas)' + sLineBreak +
     'Validadas sem gravar: %d' + sLineBreak +
     'Com erro: %d (veja a aba Erros)',
     [vResumo.Mensagem, vResumo.Lidas, vResumo.Inseridas, vResumo.Atualizadas, vResumo.Ignoradas,
@@ -724,6 +732,22 @@ begin
   end;
   tabErros.Caption := Format('Erros da importação (%d)', [Length(AErros)]);
   FErrosDaPrevia := False;
+end;
+
+procedure TfrmImportacao.MostrarIgnoradas(const AIgnoradas: TArray<TLinhaIgnorada>);
+var
+  i: Integer;
+begin
+  LimparGrade(grdIgnoradas, ['Linha', 'Motivo', 'Campos-chave']);
+  if Length(AIgnoradas) > 0 then
+    grdIgnoradas.RowCount := Length(AIgnoradas) + 1;
+  for i := 0 to High(AIgnoradas) do
+  begin
+    grdIgnoradas.Cells[0, i + 1] := IntToStr(AIgnoradas[i].Linha);
+    grdIgnoradas.Cells[1, i + 1] := AIgnoradas[i].Motivo;
+    grdIgnoradas.Cells[2, i + 1] := AIgnoradas[i].Chave;
+  end;
+  tabIgnoradas.Caption := Format('Ignoradas (%d)', [Length(AIgnoradas)]);
 end;
 
 procedure TfrmImportacao.MostrarDetalhe(ALinhaResultado, AIndiceCampo: Integer);

@@ -42,6 +42,11 @@ type
     procedure TestListaParaComErro;
     procedure TestSerializacao;
     procedure TestNaoDependeDaMaquina;
+    procedure TestNumeroExcelParaData;
+    procedure TestNumeroExcelParaDataErros;
+    procedure TestSomarSubtrairColuna;
+    procedure TestSomarSubtrairColunaErros;
+    procedure TestValorPadraoSeVazio;
   end;
 
 implementation
@@ -300,6 +305,14 @@ begin
   VerificarOk(ttCpfCnpj, '529.982.247-25', '52998224725');
   VerificarOk(ttCpfCnpj, '52998224725', '529.982.247-25', 'FORMATADO');
   VerificarOk(ttCpfCnpj, '12.194.177/0001-00', '12194177000100', 'SEM_VALIDAR');
+  // Documento zerado é aceito como válido
+  VerificarOk(ttCpfCnpj, '0', '0');
+  VerificarOk(ttCpfCnpj, 0, '0');
+  VerificarOk(ttCpfCnpj, '000.000.000-00', '00000000000');
+  VerificarOk(ttCpfCnpj, '00.000.000/0000-00', '00000000000000');
+  VerificarOk(ttCpfCnpj, '00000000000', '000.000.000-00', 'FORMATADO');
+  VerificarOk(ttCpfCnpj, '00', '00');
+  VerificarOk(ttCpfCnpj, '000.000', '000000');
 end;
 
 procedure TTestTransformacoes.TestCpfCnpjErros;
@@ -307,6 +320,7 @@ begin
   VerificarErro(ttCpfCnpj, '12.194.177/0001-00');
   VerificarErro(ttCpfCnpj, '111.111.111-11');
   VerificarErro(ttCpfCnpj, '123');
+  VerificarErro(ttCpfCnpj, '-');
   VerificarErro(ttCpfCnpj, '12194177000155', 'OUTRO');
 end;
 
@@ -455,6 +469,130 @@ begin
   finally
     FormatSettings := vOriginal;
   end;
+end;
+
+procedure TTestTransformacoes.TestNumeroExcelParaData;
+begin
+  VerificarOk(ttNumeroExcelParaData, 41829, EncodeDate(2014, 7, 9));
+  VerificarOk(ttNumeroExcelParaData, 45460.0, EncodeDate(2024, 6, 17));
+  VerificarOk(ttNumeroExcelParaData, ' 42050 ', EncodeDate(2015, 2, 15));
+  // Data já tipada passa (sem a hora), para a mesma lista servir a planilhas com e sem formato de data
+  VerificarOk(ttNumeroExcelParaData, EncodeDateTime(2020, 3, 2, 14, 30, 0, 0), EncodeDate(2020, 3, 2));
+  VerificarOk(ttNumeroExcelParaData, '', Null);
+  VerificarOk(ttNumeroExcelParaData, Null, Null);
+end;
+
+procedure TTestTransformacoes.TestNumeroExcelParaDataErros;
+begin
+  VerificarErro(ttNumeroExcelParaData, 41829.5);
+  VerificarErro(ttNumeroExcelParaData, 0);
+  VerificarErro(ttNumeroExcelParaData, -5);
+  VerificarErro(ttNumeroExcelParaData, 3000000);
+  VerificarErro(ttNumeroExcelParaData, '02/03/2020');
+  VerificarErro(ttNumeroExcelParaData, 'ABC');
+end;
+
+procedure TTestTransformacoes.TestSomarSubtrairColuna;
+var
+  vColunas: TObterValorColuna;
+  vResultado: TResultadoTransformacao;
+begin
+  vColunas :=
+    function(const ANomeColuna: string; out AValor: Variant): Boolean
+    begin
+      Result := True;
+      if SameText(ANomeColuna, 'Valor do Juros') then
+        AValor := 226.65
+      else if SameText(ANomeColuna, 'Desconto') then
+        AValor := '10,50'
+      else if SameText(ANomeColuna, 'Vazia') then
+        AValor := Null
+      else
+        Result := False;
+    end;
+
+  vResultado := Aplicar(ttSubtrairColuna, 2500.0, 'Valor do Juros', vColunas);
+  CheckTrue(vResultado.Sucesso, vResultado.Mensagem);
+  CheckEquals(2273.35, Double(vResultado.Valor), 0.0000001);
+
+  vResultado := Aplicar(ttSomarColuna, '100,00', 'Desconto', vColunas);
+  CheckTrue(vResultado.Sucesso, vResultado.Mensagem);
+  CheckEquals(110.5, Double(vResultado.Valor), 0.0000001);
+
+  // Coluna vazia conta como 0
+  vResultado := Aplicar(ttSomarColuna, 81.38, 'Vazia', vColunas);
+  CheckTrue(vResultado.Sucesso, vResultado.Mensagem);
+  CheckEquals(81.38, Double(vResultado.Valor), 0.0000001);
+
+  // Valor vazio continua vazio (quem decide é o valor padrão do campo)
+  vResultado := Aplicar(ttSubtrairColuna, '', 'Valor do Juros', vColunas);
+  CheckTrue(vResultado.Sucesso, vResultado.Mensagem);
+  CheckTrue(VarIsNull(vResultado.Valor), 'Vazio deveria continuar nulo');
+end;
+
+procedure TTestTransformacoes.TestSomarSubtrairColunaErros;
+var
+  vColunas: TObterValorColuna;
+  vResultado: TResultadoTransformacao;
+begin
+  vColunas :=
+    function(const ANomeColuna: string; out AValor: Variant): Boolean
+    begin
+      Result := SameText(ANomeColuna, 'Texto');
+      AValor := 'ABC';
+    end;
+
+  vResultado := Aplicar(ttSomarColuna, 10.0, 'Inexistente', vColunas);
+  CheckFalse(vResultado.Sucesso, 'Coluna inexistente deveria dar erro');
+  vResultado := Aplicar(ttSomarColuna, 10.0, 'Texto', vColunas);
+  CheckFalse(vResultado.Sucesso, 'Coluna com texto deveria dar erro');
+  vResultado := Aplicar(ttSubtrairColuna, 'XYZ', 'Texto', vColunas);
+  CheckFalse(vResultado.Sucesso, 'Valor não numérico deveria dar erro');
+  vResultado := Aplicar(ttSomarColuna, 10.0, '', vColunas);
+  CheckFalse(vResultado.Sucesso, 'Sem o nome da coluna deveria dar erro');
+  vResultado := Aplicar(ttSomarColuna, 10.0, 'Texto', nil);
+  CheckFalse(vResultado.Sucesso, 'Sem acesso às colunas deveria dar erro');
+end;
+
+procedure TTestTransformacoes.TestValorPadraoSeVazio;
+var
+  vLista: TArray<TTransformacao>;
+  vResultado: TResultadoTransformacao;
+  vPadraoNoFim: Boolean;
+begin
+  VerificarOk(ttValorPadraoSeVazio, Null, 'SEM NOME', 'SEM NOME');
+  VerificarOk(ttValorPadraoSeVazio, '', '0', '0');
+  VerificarOk(ttValorPadraoSeVazio, '   ', 'S/N', 'S/N');
+  VerificarOk(ttValorPadraoSeVazio, 'ABC', 'ABC', 'X');
+  VerificarOk(ttValorPadraoSeVazio, 0, 0, '9');
+  VerificarErro(ttValorPadraoSeVazio, Null, '');
+
+  // Serialização
+  vLista := TextoParaTransformacoes('VALOR_PADRAO_SE_VAZIO|S/N');
+  CheckEquals(1, Length(vLista));
+  CheckTrue(vLista[0].Tipo = ttValorPadraoSeVazio);
+  CheckEquals('S/N', vLista[0].Parametro);
+  CheckEquals('VALOR_PADRAO_SE_VAZIO|S/N', TransformacoesParaTexto(vLista));
+
+  // No meio da lista: as seguintes recebem o padrão; só marca "padrão no fim" se for a última e trocou
+  SetLength(vLista, 2);
+  vLista[0].Tipo := ttValorPadraoSeVazio;
+  vLista[0].Parametro := '12';
+  vLista[1].Tipo := ttTextoParaInteiro;
+  vLista[1].Parametro := '';
+  vResultado := AplicarTransformacoes(vLista, '', nil, vPadraoNoFim);
+  CheckTrue(vResultado.Sucesso, vResultado.Mensagem);
+  CheckEquals(12, Integer(vResultado.Valor));
+  CheckFalse(vPadraoNoFim, 'Houve transformação depois do padrão');
+
+  vResultado := AplicarTransformacoes([vLista[1], vLista[0]], ' ', nil, vPadraoNoFim);
+  CheckTrue(vResultado.Sucesso, vResultado.Mensagem);
+  CheckEquals('12', VarToStr(vResultado.Valor));
+  CheckTrue(vPadraoNoFim, 'Padrão aplicado na última transformação');
+
+  vResultado := AplicarTransformacoes([vLista[1], vLista[0]], '7', nil, vPadraoNoFim);
+  CheckEquals(7, Integer(vResultado.Valor));
+  CheckFalse(vPadraoNoFim, 'Com valor, o padrão não é usado');
 end;
 
 initialization

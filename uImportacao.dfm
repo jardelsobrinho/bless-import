@@ -371,6 +371,27 @@
           650)
       end
     end
+    object tabIgnoradas: TTabSheet
+      Caption = 'Ignoradas'
+      ImageIndex = 3
+      object grdIgnoradas: TStringGrid
+        Left = 0
+        Top = 0
+        Width = 1180
+        Height = 453
+        Align = alClient
+        ColCount = 3
+        DefaultRowHeight = 22
+        FixedCols = 0
+        RowCount = 2
+        Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goColSizing, goRowSelect]
+        TabOrder = 0
+        ColWidths = (
+          50
+          330
+          780)
+      end
+    end
   end
   object dlgAbrir: TOpenDialog
     Filter = 'Planilhas do Excel (*.xls;*.xlsx)|*.xls;*.xlsx|Todos os arquivos (*.*)|*.*'

@@ -31,7 +31,11 @@ type
     ttConcatenar,
     ttArredondar,
     ttDePara,
-    ttVazioParaNulo);
+    ttVazioParaNulo,
+    ttNumeroExcelParaData,
+    ttSomarColuna,
+    ttSubtrairColuna,
+    ttValorPadraoSeVazio);
 
   TTransformacao = record
     Tipo: TTipoTransformacao;
@@ -76,20 +80,33 @@ const
     (Codigo: 'PARTE_TEXTO'; Nome: 'Parte do texto';
       AjudaParametro: 'início,quantidade (início a partir de 1), ex.: 1,3 = 3 primeiros; 5 = do 5º até o fim'),
     (Codigo: 'CPF_CNPJ'; Nome: 'CPF/CNPJ';
-      AjudaParametro: 'Vazio = só dígitos validando; FORMATADO = com pontuação; SEM_VALIDAR = só dígitos'),
+      AjudaParametro: 'Vazio = só dígitos validando; FORMATADO = com pontuação; SEM_VALIDAR = só dígitos. ' +
+      'Zerado (só zeros, em qualquer quantidade) é aceito'),
     (Codigo: 'CONCATENAR'; Nome: 'Concatenar';
       AjudaParametro: 'Modelo com {valor} e {Nome da coluna}, ex.: {valor}, {Numero} - {Complemento}'),
     (Codigo: 'ARREDONDAR'; Nome: 'Arredondar'; AjudaParametro: 'Casas decimais (padrão 2)'),
     (Codigo: 'DE_PARA'; Nome: 'De-para (condicional)';
       AjudaParametro: 'de=para separados por ;  e * para os demais, ex.: JURIDICA=J;FISICA=F;*=F'),
-    (Codigo: 'VAZIO_PARA_NULO'; Nome: 'Vazio para nulo'; AjudaParametro: ''));
+    (Codigo: 'VAZIO_PARA_NULO'; Nome: 'Vazio para nulo'; AjudaParametro: ''),
+    (Codigo: 'NUMERO_EXCEL_PARA_DATA'; Nome: 'Número do Excel para data';
+      AjudaParametro: ''),
+    (Codigo: 'SOMAR_COLUNA'; Nome: 'Somar coluna';
+      AjudaParametro: 'Nome da coluna somada ao valor (coluna vazia conta como 0)'),
+    (Codigo: 'SUBTRAIR_COLUNA'; Nome: 'Subtrair coluna';
+      AjudaParametro: 'Nome da coluna subtraída do valor (coluna vazia conta como 0)'),
+    (Codigo: 'VALOR_PADRAO_SE_VAZIO'; Nome: 'Valor padrão se vazio';
+      AjudaParametro: 'Valor usado quando o valor estiver nulo ou em branco (só espaços)'));
 
 function Transformar(ATipo: TTipoTransformacao; const AValor: Variant; const AParametro: string;
   AObterColuna: TObterValorColuna = nil): TResultadoTransformacao;
 
 // Aplica a lista em ordem; para no primeiro erro (a mensagem indica qual transformação falhou)
 function AplicarTransformacoes(const ALista: TArray<TTransformacao>; const AValor: Variant;
-  AObterColuna: TObterValorColuna = nil): TResultadoTransformacao;
+  AObterColuna: TObterValorColuna = nil): TResultadoTransformacao; overload;
+// APadraoNoFim = True quando a última transformação da lista foi "Valor padrão se vazio" e trocou o valor
+// (o valor final é o texto digitado no perfil, que pode ser convertido para o tipo do campo)
+function AplicarTransformacoes(const ALista: TArray<TTransformacao>; const AValor: Variant;
+  AObterColuna: TObterValorColuna; out APadraoNoFim: Boolean): TResultadoTransformacao; overload;
 
 // Gravação da lista no perfil: uma transformação por linha, "CODIGO|parâmetro"
 function TransformacoesParaTexto(const ALista: TArray<TTransformacao>): string;
@@ -703,6 +720,11 @@ begin
     vOriginal := Trim(VarToStr(AValor));
   vDigitos := SomenteDigitos(vOriginal);
 
+  // Documento zerado (qualquer quantidade de zeros: 0, 000.000.000-00, 00.000.000/0000-00...) é aceito como
+  // válido, sem conferir os dígitos
+  if (vDigitos <> '') and (vDigitos = StringOfChar('0', Length(vDigitos))) then
+    vValidar := False;
+
   if vValidar then
   begin
     if Length(vDigitos) = 11 then
@@ -975,6 +997,69 @@ begin
     Result := Erro(Format('"%s" não está previsto no de-para (%s).', [vTexto, AParametro]));
 end;
 
+function NumeroExcelParaData(const AValor: Variant): TResultadoTransformacao;
+const
+  cMAIOR_SERIAL = 2958465; // 31/12/9999
+var
+  vNumero: Double;
+  vTexto: string;
+begin
+  // O Excel grava a data como dias desde 30/12/1899 (o mesmo início do TDateTime); sem o formato de data
+  // na célula, a planilha entrega só o número
+  if EhVazio(AValor) then
+    Exit(Ok(Null));
+  if EhData(AValor) then
+    Exit(Ok(VarFromDateTime(DateOf(AValor))));
+
+  if EhNumero(AValor) then
+    vNumero := AValor
+  else
+  begin
+    vTexto := Trim(VarToStr(AValor));
+    if not SoDigitos(vTexto) then
+      Exit(Erro(Format('"%s" não é um número de data do Excel.', [vTexto])));
+    vNumero := StrToFloat(vTexto, GFormatoInvariante);
+  end;
+
+  if (Frac(vNumero) <> 0) or (vNumero < 1) or (vNumero > cMAIOR_SERIAL) then
+    Exit(Erro(Format('"%s" não é um número de data do Excel (esperado um inteiro de 1 a %d).',
+      [ValorParaTexto(AValor), cMAIOR_SERIAL])));
+  Result := Ok(VarFromDateTime(EncodeDate(1899, 12, 30) + Trunc(vNumero)));
+end;
+
+function SomarColuna(const AValor: Variant; const AParametro: string; ASinal: Integer;
+  AObterColuna: TObterValorColuna): TResultadoTransformacao;
+var
+  vNome: string;
+  vValorColuna: Variant;
+  vNumero, vParcela: Double;
+begin
+  vNome := Trim(AParametro);
+  if vNome = '' then
+    Exit(Erro('Informe o nome da coluna.'));
+
+  if EhVazio(AValor) then
+    Exit(Ok(Null));
+  if EhNumero(AValor) then
+    vNumero := AValor
+  else if not TextoParaNumero(VarToStr(AValor), True, vNumero) then
+    Exit(Erro(Format('"%s" não é um número.', [VarToStr(AValor)])));
+
+  if not Assigned(AObterColuna) then
+    Exit(Erro(Format('A coluna "%s" não está disponível.', [vNome])));
+  if not AObterColuna(vNome, vValorColuna) then
+    Exit(Erro(Format('A coluna "%s" não existe na planilha.', [vNome])));
+
+  if EhVazio(vValorColuna) then
+    vParcela := 0
+  else if EhNumero(vValorColuna) then
+    vParcela := vValorColuna
+  else if not TextoParaNumero(VarToStr(vValorColuna), True, vParcela) then
+    Exit(Erro(Format('O valor "%s" da coluna "%s" não é um número.', [VarToStr(vValorColuna), vNome])));
+
+  Result := Ok(vNumero + ASinal * vParcela);
+end;
+
 function Transformar(ATipo: TTipoTransformacao; const AValor: Variant; const AParametro: string;
   AObterColuna: TObterValorColuna): TResultadoTransformacao;
 begin
@@ -1027,6 +1112,19 @@ begin
         Result := Ok(Null)
       else
         Result := Ok(AValor);
+    ttNumeroExcelParaData:
+      Result := NumeroExcelParaData(AValor);
+    ttSomarColuna:
+      Result := SomarColuna(AValor, AParametro, 1, AObterColuna);
+    ttSubtrairColuna:
+      Result := SomarColuna(AValor, AParametro, -1, AObterColuna);
+    ttValorPadraoSeVazio:
+      if AParametro = '' then
+        Result := Erro('Informe o valor padrão no parâmetro.')
+      else if EhVazio(AValor) then
+        Result := Ok(AParametro)
+      else
+        Result := Ok(AValor);
   else
     Result := Erro('Transformação desconhecida.');
   end;
@@ -1035,17 +1133,30 @@ end;
 function AplicarTransformacoes(const ALista: TArray<TTransformacao>; const AValor: Variant;
   AObterColuna: TObterValorColuna): TResultadoTransformacao;
 var
-  vTransformacao: TTransformacao;
+  vPadraoNoFim: Boolean;
 begin
+  Result := AplicarTransformacoes(ALista, AValor, AObterColuna, vPadraoNoFim);
+end;
+
+function AplicarTransformacoes(const ALista: TArray<TTransformacao>; const AValor: Variant;
+  AObterColuna: TObterValorColuna; out APadraoNoFim: Boolean): TResultadoTransformacao;
+var
+  vTransformacao: TTransformacao;
+  vEraVazio: Boolean;
+begin
+  APadraoNoFim := False;
   Result := Ok(AValor);
   for vTransformacao in ALista do
   begin
+    vEraVazio := EhVazio(Result.Valor);
     Result := Transformar(vTransformacao.Tipo, Result.Valor, vTransformacao.Parametro, AObterColuna);
     if not Result.Sucesso then
     begin
       Result.Mensagem := cTRANSFORMACOES[vTransformacao.Tipo].Nome + ': ' + Result.Mensagem;
+      APadraoNoFim := False;
       Exit;
     end;
+    APadraoNoFim := (vTransformacao.Tipo = ttValorPadraoSeVazio) and vEraVazio;
   end;
 end;
 

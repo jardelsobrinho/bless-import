@@ -108,9 +108,11 @@
             <DesignClass>TDataModule</DesignClass>
         </DCCReference>
         <DCCReference Include="..\uImportador.pas"/>
+        <DCCReference Include="..\uPerfilArquivo.pas"/>
         <DCCReference Include="uTestTransformacoes.pas"/>
         <DCCReference Include="uTestPerfilModelo.pas"/>
         <DCCReference Include="uTestImportador.pas"/>
+        <DCCReference Include="uTestPerfilArquivo.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

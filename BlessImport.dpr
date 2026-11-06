@@ -22,6 +22,8 @@ uses
   uPerfisDm in 'uPerfisDm.pas' {dmPerfis: TDataModule},
   uPerfis in 'uPerfis.pas' {frmPerfis},
   uPerfilEdicao in 'uPerfilEdicao.pas' {frmPerfilEdicao},
+  uPerfilArquivo in 'uPerfilArquivo.pas',
+  uPerfisImportar in 'uPerfisImportar.pas' {frmPerfisImportar},
   uImportador in 'uImportador.pas',
   uImportacaoDm in 'uImportacaoDm.pas' {dmImportacao: TDataModule},
   uImportacao in 'uImportacao.pas' {frmImportacao},

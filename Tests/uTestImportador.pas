@@ -53,6 +53,8 @@ type
     procedure TestConsultaSql;
     procedure TestConsultaSqlNaoEncontradaEErros;
     procedure TestValidarConsultaSql;
+    procedure TestTransformacaoValorPadrao;
+    procedure TestValidarTransformacaoValorPadrao;
   end;
 
 implementation
@@ -1125,6 +1127,67 @@ begin
     CheckTrue(vPerfil.Campos[0].ValidarConfiguracao(vMensagem), vMensagem);
     CheckEquals(1, Length(vPerfil.Campos[0].ColunasUsadas));
     CheckEquals('Cidade', vPerfil.Campos[0].ColunasUsadas[0]);
+  finally
+    vPerfil.Free;
+  end;
+end;
+
+procedure TTestImportador.TestTransformacaoValorPadrao;
+var
+  vCampo: TCampoPerfil;
+  vResultado: TValorResolvido;
+begin
+  Linha(['Quantidade'], ['  ']);
+  vCampo := TCampoPerfil.Create('QUANTIDADE');
+  try
+    vCampo.Origem := ovColuna;
+    vCampo.Coluna := 'Quantidade';
+
+    // Padrão no fim: o texto do parâmetro vira o tipo do campo
+    vCampo.Transformacoes := [Transformacao(ttTextoParaInteiro), Transformacao(ttValorPadraoSeVazio, '0')];
+    vResultado := Resolver(vCampo, Destino('QUANTIDADE', 'INTEGER', ccInteiro));
+    CheckTrue(vResultado.Ok, vResultado.Mensagem);
+    CheckTrue(vResultado.Fonte = fvPadrao, 'A fonte mostrada é o padrão');
+    CheckEquals(0, Integer(vResultado.Valor));
+    CheckTrue(VarIsOrdinal(vResultado.Valor), 'Gravado como inteiro');
+
+    // Padrão antes da conversão: também funciona
+    vCampo.Transformacoes := [Transformacao(ttValorPadraoSeVazio, '5'), Transformacao(ttTextoParaInteiro)];
+    vResultado := Resolver(vCampo, Destino('QUANTIDADE', 'INTEGER', ccInteiro));
+    CheckTrue(vResultado.Ok, vResultado.Mensagem);
+    CheckEquals(5, Integer(vResultado.Valor));
+
+    // Com valor, o padrão não é usado
+    Linha(['Quantidade'], ['3']);
+    vCampo.Transformacoes := [Transformacao(ttTextoParaInteiro), Transformacao(ttValorPadraoSeVazio, '0')];
+    vResultado := Resolver(vCampo, Destino('QUANTIDADE', 'INTEGER', ccInteiro));
+    CheckTrue(vResultado.Ok, vResultado.Mensagem);
+    CheckTrue(vResultado.Fonte = fvColuna);
+    CheckEquals(3, Integer(vResultado.Valor));
+  finally
+    vCampo.Free;
+  end;
+end;
+
+procedure TTestImportador.TestValidarTransformacaoValorPadrao;
+var
+  vPerfil: TPerfil;
+  vProblemas: TArray<TProblemaPerfil>;
+begin
+  vPerfil := TPerfil.Create;
+  try
+    vPerfil.TabelaDestino := 'PRODUTO';
+    vPerfil.AdicionarCampo('QUANTIDADE').Origem := ovColuna;
+    vPerfil.CampoPorNome('QUANTIDADE').Coluna := 'Quantidade';
+    vPerfil.CampoPorNome('QUANTIDADE').Transformacoes := [Transformacao(ttValorPadraoSeVazio, 'ABC')];
+    vPerfil.AdicionarCampo('UNIDADE').Origem := ovColuna;
+    vPerfil.CampoPorNome('UNIDADE').Coluna := 'Unidade';
+    vPerfil.CampoPorNome('UNIDADE').Transformacoes := [Transformacao(ttValorPadraoSeVazio, 'UN')];
+
+    vProblemas := ValidarPerfil(vPerfil, True, [Destino('QUANTIDADE', 'INTEGER', ccInteiro),
+      Destino('UNIDADE', 'VARCHAR(3)', ccTexto, 3)], True, ['Quantidade', 'Unidade'], nil, ['PRODUTO']);
+    CheckTrue(TemProblema(vProblemas, gvErro, 'QUANTIDADE', 'Valor padrão se vazio'), 'Padrão incompatível');
+    CheckEquals(1, Length(vProblemas), 'Nenhum problema a mais');
   finally
     vPerfil.Free;
   end;

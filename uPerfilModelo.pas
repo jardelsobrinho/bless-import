@@ -291,8 +291,12 @@ begin
   if Origem <> ovGerado then
     for vTransformacao in Transformacoes do
       if vTransformacao.Tipo = ttConcatenar then
+      begin
         for vNome in ColunasDoModelo(vTransformacao.Parametro) do
           Adicionar(vNome);
+      end
+      else if vTransformacao.Tipo in [ttSomarColuna, ttSubtrairColuna] then
+        Adicionar(Trim(vTransformacao.Parametro));
   Result := vLista;
 end;
 

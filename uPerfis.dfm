@@ -58,6 +58,30 @@
       TabOrder = 3
       OnClick = btnExcluirClick
     end
+    object btnExportar: TButton
+      Left = 400
+      Top = 6
+      Width = 90
+      Height = 27
+      Hint = 'Grava os perfis selecionados num arquivo (Ctrl+clique seleciona v'#225'rios)'
+      Caption = 'Exportar...'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 4
+      OnClick = btnExportarClick
+    end
+    object btnImportar: TButton
+      Left = 496
+      Top = 6
+      Width = 90
+      Height = 27
+      Hint = 'L'#234' perfis de um arquivo exportado (de outro banco de configura'#231#245'es)'
+      Caption = 'Importar...'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 5
+      OnClick = btnImportarClick
+    end
   end
   object grdPerfis: TDBGrid
     Left = 6
@@ -65,7 +89,7 @@
     Width = 988
     Height = 356
     Align = alClient
-    Options = [dgTitles, dgIndicator, dgColumnResize, dgColLines, dgRowLines, dgTabs, dgRowSelect, dgAlwaysShowSelection, dgCancelOnExit, dgTitleClick, dgTitleHotTrack]
+    Options = [dgTitles, dgIndicator, dgColumnResize, dgColLines, dgRowLines, dgTabs, dgRowSelect, dgAlwaysShowSelection, dgMultiSelect, dgCancelOnExit, dgTitleClick, dgTitleHotTrack]
     ReadOnly = True
     TabOrder = 2
     TitleFont.Charset = DEFAULT_CHARSET

@@ -8,6 +8,10 @@ uses
   FireDAC.Comp.DataSet, FireDAC.Comp.Client, uPerfilModelo;
 
 type
+  // Importação de arquivo: o que fazer quando já existe um perfil com o mesmo nome
+  TAcaoPerfilExistente = (apeSubstituir, apeCriarCopia, apePular);
+  TResultadoPerfilImportado = (rpiNovo, rpiSubstituido, rpiCopia, rpiPulado);
+
   TdmPerfis = class(TDataModule)
     qryPerfis: TFDQuery;
     dsPerfis: TDataSource;
@@ -16,6 +20,8 @@ type
     function NovaQuery: TFDQuery;
     procedure Validar(APerfil: TPerfil);
     function NomeDisponivel(const ANomeBase: string): string;
+    function IdPorNome(const ANome: string): Integer;
+    function NomeConexao(AIdConexao: Integer): string;
   public
     procedure Pesquisar;
     function IdSelecionado: Integer;
@@ -24,6 +30,11 @@ type
     procedure Gravar(APerfil: TPerfil);
     function Duplicar(AId: Integer): Integer;
     procedure Excluir(AId: Integer);
+    // Grava os perfis num arquivo JSON (uPerfilArquivo)
+    procedure Exportar(const AIds: TArray<Integer>; const AArquivo: string);
+    // Grava um perfil lido de arquivo, ligado a AIdConexao. Substituir mantém o ID do perfil de mesmo
+    // nome (o histórico continua ligado) e sobe a versão
+    function Importar(APerfil: TPerfil; AIdConexao: Integer; AExistente: TAcaoPerfilExistente): TResultadoPerfilImportado;
   end;
 
 implementation
@@ -33,7 +44,7 @@ implementation
 {$R *.dfm}
 
 uses
-  uDmConexao, uTransformacoes;
+  System.IOUtils, uDmConexao, uTransformacoes, uPerfilArquivo;
 
 function SimNao(AValor: Boolean): string;
 begin
@@ -337,6 +348,92 @@ begin
   end;
 
   Pesquisar;
+end;
+
+function TdmPerfis.IdPorNome(const ANome: string): Integer;
+var
+  vQry: TFDQuery;
+begin
+  vQry := NovaQuery;
+  try
+    vQry.SQL.Text := 'select coalesce(max(ID), 0) from PERFIL where upper(NOME) = upper(:NOME)';
+    vQry.ParamByName('NOME').AsString := Trim(ANome);
+    vQry.Open;
+    Result := vQry.Fields[0].AsInteger;
+  finally
+    vQry.Free;
+  end;
+end;
+
+function TdmPerfis.NomeConexao(AIdConexao: Integer): string;
+var
+  vQry: TFDQuery;
+begin
+  vQry := NovaQuery;
+  try
+    vQry.SQL.Text := 'select NOME from CONEXAO where ID = :ID';
+    vQry.ParamByName('ID').AsInteger := AIdConexao;
+    vQry.Open;
+    Result := vQry.Fields[0].AsString;
+  finally
+    vQry.Free;
+  end;
+end;
+
+procedure TdmPerfis.Exportar(const AIds: TArray<Integer>; const AArquivo: string);
+var
+  vPerfis: TArray<TPerfil>;
+  vConexoes: TArray<string>;
+  vId: Integer;
+  vPerfil: TPerfil;
+begin
+  if Length(AIds) = 0 then
+    raise Exception.Create('Selecione os perfis a exportar.');
+
+  vPerfis := nil;
+  try
+    for vId in AIds do
+    begin
+      vPerfis := vPerfis + [Carregar(vId)];
+      vConexoes := vConexoes + [NomeConexao(vPerfis[High(vPerfis)].IdConexao)];
+    end;
+    TFile.WriteAllText(AArquivo, PerfisParaJson(vPerfis, vConexoes), TEncoding.UTF8);
+  finally
+    for vPerfil in vPerfis do
+      vPerfil.Free;
+  end;
+end;
+
+function TdmPerfis.Importar(APerfil: TPerfil; AIdConexao: Integer;
+  AExistente: TAcaoPerfilExistente): TResultadoPerfilImportado;
+var
+  vIdExistente: Integer;
+begin
+  APerfil.IdConexao := AIdConexao;
+  vIdExistente := IdPorNome(APerfil.Nome);
+  if vIdExistente = 0 then
+  begin
+    APerfil.Id := 0;
+    Result := rpiNovo;
+  end
+  else
+    case AExistente of
+      apeSubstituir:
+        begin
+          APerfil.Id := vIdExistente;
+          Result := rpiSubstituido;
+        end;
+      apeCriarCopia:
+        begin
+          APerfil.Id := 0;
+          APerfil.Nome := NomeDisponivel(APerfil.Nome);
+          Result := rpiCopia;
+        end;
+    else
+      Exit(rpiPulado);
+    end;
+
+  Gravar(APerfil);
 end;
 
 end.

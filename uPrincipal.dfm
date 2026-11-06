@@ -117,15 +117,25 @@
     Font.Style = [fsBold]
     OwnerDraw = True
     ParentFont = False
+    TabHeight = 22
     TabOrder = 1
     OnDrawTab = pcJanelasDrawTab
+    OnMouseDown = pcJanelasMouseDown
+    OnMouseLeave = pcJanelasMouseLeave
+    OnMouseMove = pcJanelasMouseMove
+    OnMouseUp = pcJanelasMouseUp
   end
   object sbStatus: TStatusBar
     Left = 0
     Top = 581
     Width = 1000
     Height = 19
-    Panels = <>
-    SimplePanel = True
+    Panels = <
+      item
+        Width = 160
+      end
+      item
+        Width = 50
+      end>
   end
 end

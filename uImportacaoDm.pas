@@ -22,6 +22,13 @@ type
     Mensagem: string;
   end;
 
+  // Linha não gravada de propósito pela estratégia (já existia, não encontrada para atualizar...)
+  TLinhaIgnorada = record
+    Linha: Integer;
+    Motivo: string;
+    Chave: string;   // "CAMPO=valor; CAMPO=valor" dos campos-chave
+  end;
+
   TResumoImportacao = record
     IdExecucao: Integer;
     Status: TStatusExecucao;
@@ -76,8 +83,10 @@ type
     // (ficam em AErros e em EXECUCAO_ERRO). Exceção só se o perfil não puder ser gravado.
     // Retomada: AIdExecucaoOrigem = execução interrompida e ALinhaInicio = linha da planilha onde continuar
     // (a ULTIMA_LINHA dela + 1); 0 = desde o começo.
+    // AIgnoradas = linhas que a estratégia não gravou, para conferência (só em memória)
     function Importar(AProgresso: TProgressoImportacao; out AErros: TArray<TErroImportacao>;
-      AIdExecucaoOrigem: Integer = 0; ALinhaInicio: Integer = 0): TResumoImportacao;
+      out AIgnoradas: TArray<TLinhaIgnorada>; AIdExecucaoOrigem: Integer = 0;
+      ALinhaInicio: Integer = 0): TResumoImportacao;
     // Última linha da planilha aberta
     function UltimaLinhaPlanilha: Integer;
     // Descrição do banco de destino para a confirmação: "Nome (servidor:banco)"
@@ -430,10 +439,11 @@ begin
 end;
 
 function TdmImportacao.Importar(AProgresso: TProgressoImportacao; out AErros: TArray<TErroImportacao>;
-  AIdExecucaoOrigem, ALinhaInicio: Integer): TResumoImportacao;
+  out AIgnoradas: TArray<TLinhaIgnorada>; AIdExecucaoOrigem, ALinhaInicio: Integer): TResumoImportacao;
 var
   vResumo: TResumoImportacao;
   vErros: TList<TErroImportacao>;
+  vIgnoradas: TList<TLinhaIgnorada>;
   vQryErro: TFDQuery;
   vConsultas: TConsultaReferencias;
   vResolvedor: TResolvedorValores;
@@ -473,13 +483,27 @@ var
     Result := False;
   end;
 
-  function GravarLinha(const ALinha: TResultadoLinha): TResultadoGravacao;
+  function TextoDaChave(const ALinha: TResultadoLinha): string;
+  var
+    i: Integer;
+  begin
+    Result := '';
+    for i in vIndicesChave do
+    begin
+      if Result <> '' then
+        Result := Result + '; ';
+      Result := Result + vCampos[i].CampoDestino + '=' + VarToStr(ALinha.Valores[i].Valor);
+    end;
+  end;
+
+  function GravarLinha(const ALinha: TResultadoLinha; out AMotivo: string): TResultadoGravacao;
   var
     vChaves, vCamposGravar: TArray<TCampoDestino>;
     vValoresChave, vValoresGravar: TArray<Variant>;
     vValor: TValorResolvido;
     vQuantidade, i: Integer;
   begin
+    AMotivo := '';
     vChaves := nil;
     vValoresChave := nil;
     for i in vIndicesChave do
@@ -497,9 +521,15 @@ var
           [FPerfil.CamposChave, vQuantidade]);
     end;
     if (FPerfil.Estrategia = egIgnorarExistentes) and (vQuantidade = 1) then
+    begin
+      AMotivo := 'já existe no destino';
       Exit(rgIgnorada);
+    end;
     if (FPerfil.Estrategia = egAtualizar) and (vQuantidade = 0) then
+    begin
+      AMotivo := 'não encontrado no destino (a estratégia só atualiza)';
       Exit(rgIgnorada);
+    end;
 
     vCamposGravar := nil;
     vValoresGravar := nil;
@@ -516,7 +546,10 @@ var
         vValoresGravar := vValoresGravar + [vValor.Valor];
       end;
       if Length(vCamposGravar) = 0 then
+      begin
+        AMotivo := 'já existe no destino e não há valor para atualizar (todos vazios)';
         Exit(rgIgnorada);
+      end;
       FDmDestino.Atualizar(FPerfil.TabelaDestino, vCamposGravar, vValoresGravar, vChaves, vValoresChave);
       Exit(rgAtualizada);
     end;
@@ -545,12 +578,14 @@ var
 var
   vGravar, vTudoOuNada, vErroNaLinha, vCancelar: Boolean;
   vLinha, vNoLote, vPrimeiraLinha, vPontoAnterior, i: Integer;
-  vNome: string;
+  vNome, vMotivo: string;
   vResultado: TResultadoLinha;
   vValor: TValorResolvido;
+  vIgnorada: TLinhaIgnorada;
 begin
   VerificarAntesDeGravar;
   AErros := nil;
+  AIgnoradas := nil;
   vResumo := Default(TResumoImportacao);
   vResumo.Status := seEmAndamento;
   vResumo.UltimaLinhaPlanilha := FLeitor.UltimaLinha;
@@ -573,6 +608,7 @@ begin
   vCancelar := False;
 
   vErros := TList<TErroImportacao>.Create;
+  vIgnoradas := TList<TLinhaIgnorada>.Create;
   vQryErro := TFDQuery.Create(nil);
   // As consultas usam a mesma conexão/transação da gravação: enxergam o que esta importação já inseriu
   vConsultas := TConsultaReferencias.Create(FDmDestino);
@@ -631,13 +667,19 @@ begin
               Inc(vResumo.Validadas)
             else
               try
-                case GravarLinha(vResultado) of
+                case GravarLinha(vResultado, vMotivo) of
                   rgInserida:
                     Inc(vResumo.Inseridas);
                   rgAtualizada:
                     Inc(vResumo.Atualizadas);
                   rgIgnorada:
-                    Inc(vResumo.Ignoradas);
+                    begin
+                      Inc(vResumo.Ignoradas);
+                      vIgnorada.Linha := vLinha;
+                      vIgnorada.Motivo := vMotivo;
+                      vIgnorada.Chave := TextoDaChave(vResultado);
+                      vIgnoradas.Add(vIgnorada);
+                    end;
                 end;
                 Inc(vNoLote);
               except
@@ -740,11 +782,13 @@ begin
       vResumo.Mensagem := cSTATUS_EXECUCAO[vResumo.Status].Nome + '.';
     AtualizarExecucao(vResumo, True);
     AErros := vErros.ToArray;
+    AIgnoradas := vIgnoradas.ToArray;
     Result := vResumo;
   finally
     vResolvedor.Free;
     vConsultas.Free;
     vQryErro.Free;
+    vIgnoradas.Free;
     vErros.Free;
   end;
 end;

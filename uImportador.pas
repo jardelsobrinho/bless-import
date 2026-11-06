@@ -359,6 +359,7 @@ var
   vNomesParametros: TArray<string>;
   vParametros: TArray<Variant>;
   vSqlFinal, vDescricao: string;
+  vPadraoNoFim: Boolean;
   i: Integer;
 
   procedure Falhar(ATipo: TTipoErro; const AMensagem: string);
@@ -482,9 +483,18 @@ begin
   // 2. Transformações (o valor padrão já é o valor final e não passa por elas)
   if Result.Fonte <> fvPadrao then
   begin
-    vTransformado := AplicarTransformacoes(ACampo.Transformacoes, vValor, vObterColuna);
+    vTransformado := AplicarTransformacoes(ACampo.Transformacoes, vValor, vObterColuna, vPadraoNoFim);
     if vTransformado.Sucesso then
-      vValor := vTransformado.Valor
+    begin
+      vValor := vTransformado.Valor;
+      // "Valor padrão se vazio" no fim da lista: o texto do parâmetro vira o tipo do campo, como o padrão
+      // da origem. Nas consultas o padrão é só a chave de pesquisa, e a fonte continua sendo a consulta.
+      if vPadraoNoFim and not (ACampo.Origem in [ovConsulta, ovConsultaSql]) then
+      begin
+        Result.Fonte := fvPadrao;
+        Result.Mensagem := 'vazio: usado o padrão da transformação';
+      end;
+    end
     else if (ACampo.Origem = ovPadrao) and ACampo.PadraoSeInvalido then
     begin
       vErroOriginal := vTransformado.Mensagem;
@@ -845,6 +855,7 @@ var
   vResolvido: TValorResolvido;
   vFinal: Variant;
   vSemColunas: TObterCelula;
+  vTransformacoes: TArray<TTransformacao>;
 begin
   vProblemas := nil;
   vSemColunas :=
@@ -954,6 +965,18 @@ begin
         // O valor padrão vai direto para o campo (sem transformações): confere já
         if not ConverterParaDestino(vCampo.ValorPadrao, vDestino, True, vFinal, vMensagem) then
           Adicionar(gvErro, vCampo.CampoDestino, 'Valor padrão: ' + vMensagem + '.');
+    end;
+
+    // "Valor padrão se vazio" no fim da lista vai direto para o campo: confere o parâmetro já
+    vTransformacoes := vCampo.Transformacoes;
+    if (Length(vTransformacoes) > 0) and (vTransformacoes[High(vTransformacoes)].Tipo = ttValorPadraoSeVazio) and
+      not (vCampo.Origem in [ovConsulta, ovConsultaSql]) then
+    begin
+      if vTransformacoes[High(vTransformacoes)].Parametro = '' then
+        Adicionar(gvErro, vCampo.CampoDestino, 'Valor padrão se vazio: informe o valor padrão no parâmetro.')
+      else if not ConverterParaDestino(vTransformacoes[High(vTransformacoes)].Parametro, vDestino, True, vFinal,
+        vMensagem) then
+        Adicionar(gvErro, vCampo.CampoDestino, 'Valor padrão se vazio: ' + vMensagem + '.');
     end;
   end;
 

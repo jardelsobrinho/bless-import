@@ -20,9 +20,11 @@ uses
   uConexaoDados in '..\uConexaoDados.pas',
   uDmDestino in '..\uDmDestino.pas' {dmDestino: TDataModule},
   uImportador in '..\uImportador.pas',
+  uPerfilArquivo in '..\uPerfilArquivo.pas',
   uTestTransformacoes in 'uTestTransformacoes.pas',
   uTestPerfilModelo in 'uTestPerfilModelo.pas',
-  uTestImportador in 'uTestImportador.pas';
+  uTestImportador in 'uTestImportador.pas',
+  uTestPerfilArquivo in 'uTestPerfilArquivo.pas';
 
 {$R *.RES}
 
