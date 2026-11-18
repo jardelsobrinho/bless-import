@@ -1166,7 +1166,7 @@ begin
   end;
 
   if vResolvido.Fonte = fvGerado then
-    AResultado := '(próximo valor de ' + ACampo.Generator + ')'
+    AResultado := '(próximo valor de ' + vResolvido.Generator + ')'
   else if VarIsNull(vResolvido.Valor) then
     AResultado := '(nulo)'
   else

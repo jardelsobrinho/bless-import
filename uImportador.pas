@@ -30,6 +30,8 @@ type
     Valor: Variant;         // valor final, já no tipo do campo de destino (Null = nulo)
     TipoErro: TTipoErro;
     Mensagem: string;       // erro (TipoErro <> teNenhum) ou observação
+    Generator: string;      // Fonte = fvGerado: generator que fornece o número ao gravar
+    CamposBusca: TArray<string>;  // "Generator se vazio": campos que localizam o registro sem o valor da chave
     function Ok: Boolean;
   end;
 
@@ -376,6 +378,8 @@ begin
   Result.Valor := Null;
   Result.TipoErro := teNenhum;
   Result.Mensagem := '';
+  Result.Generator := '';
+  Result.CamposBusca := nil;
   vValor := Null;
 
   // Concatenar/expressão leem outras colunas da mesma linha
@@ -401,6 +405,7 @@ begin
     ovGerado:
       begin
         Result.Fonte := fvGerado;
+        Result.Generator := ACampo.Generator;
         Result.Mensagem := 'gerado pelo ' + ACampo.Generator + ' ao gravar';
         Exit;
       end;
@@ -514,6 +519,18 @@ begin
       Result.Fonte := fvPadrao;
       Result.Mensagem := 'vazio depois das transformações: usado o padrão';
       vValor := ACampo.ValorPadrao;
+    end;
+
+    // "Generator se vazio" no fim da lista: o número só existe ao gravar
+    if (Result.Fonte <> fvPadrao) and (ACampo.Origem in [ovColuna, ovPadrao]) and EhVazio(vValor) and
+      (Length(ACampo.Transformacoes) > 0) and
+      (ACampo.Transformacoes[High(ACampo.Transformacoes)].Tipo = ttGeneratorSeVazio) then
+    begin
+      LerGeneratorSeVazio(ACampo.Transformacoes[High(ACampo.Transformacoes)].Parametro, Result.Generator,
+        Result.CamposBusca);
+      Result.Fonte := fvGerado;
+      Result.Mensagem := 'vazio: gerado pelo ' + Result.Generator + ' ao gravar';
+      Exit;
     end;
   end;
 
@@ -847,15 +864,17 @@ var
   end;
 
 var
-  vCampo: TCampoPerfil;
+  vCampo, vCampoBusca: TCampoPerfil;
   vDestino, vItem: TCampoDestino;
   vCamposConsulta: TArray<TCampoDestino>;
   vTemDestino: Boolean;
-  vColuna, vMensagem, vSqlFinal: string;
+  vColuna, vMensagem, vSqlFinal, vGenerator: string;
   vResolvido: TValorResolvido;
   vFinal: Variant;
   vSemColunas: TObterCelula;
   vTransformacoes: TArray<TTransformacao>;
+  vCamposBusca: TArray<string>;
+  i: Integer;
 begin
   vProblemas := nil;
   vSemColunas :=
@@ -978,6 +997,45 @@ begin
         vMensagem) then
         Adicionar(gvErro, vCampo.CampoDestino, 'Valor padrão se vazio: ' + vMensagem + '.');
     end;
+
+    for i := 0 to High(vTransformacoes) do
+      if vTransformacoes[i].Tipo = ttGeneratorSeVazio then
+      begin
+        if i < High(vTransformacoes) then
+          Adicionar(gvErro, vCampo.CampoDestino, 'Generator se vazio: precisa ser a última transformação da lista.');
+        if not (vCampo.Origem in [ovColuna, ovPadrao]) then
+          Adicionar(gvErro, vCampo.CampoDestino,
+            'Generator se vazio: só vale para as origens "Coluna da planilha" e "Coluna com valor padrão".');
+        if not (vDestino.Categoria in [ccInteiro, ccTexto, ccTextoLongo]) then
+          Adicionar(gvErro, vCampo.CampoDestino,
+            Format('Generator se vazio: o campo precisa ser inteiro ou texto (o campo é %s).', [vDestino.TipoSql]));
+
+        LerGeneratorSeVazio(vTransformacoes[i].Parametro, vGenerator, vCamposBusca);
+        if vGenerator = '' then
+          Adicionar(gvErro, vCampo.CampoDestino, 'Generator se vazio: informe o generator no parâmetro.')
+        else if not Contem(AGenerators, vGenerator) then
+          Adicionar(gvErro, vCampo.CampoDestino,
+            Format('Generator se vazio: o generator %s não existe no banco.', [vGenerator]));
+
+        if EstrategiaUsaChave(APerfil.Estrategia) and Contem(APerfil.ListaCamposChave, vCampo.CampoDestino) and
+          (Length(vCamposBusca) = 0) then
+          Adicionar(gvErro, vCampo.CampoDestino, 'Generator se vazio: o campo é chave; informe no parâmetro o campo ' +
+            'que localiza o registro quando o valor vier vazio (ex.: GEN_FORNECEDOR;RAZAO_SOCIAL).');
+
+        for vColuna in vCamposBusca do
+        begin
+          vCampoBusca := APerfil.CampoPorNome(vColuna);
+          if not AcharCampo(ACamposDestino, vColuna, vItem) then
+            Adicionar(gvErro, vCampo.CampoDestino,
+              Format('Generator se vazio: o campo de busca %s não existe na tabela de destino.', [vColuna]))
+          else if (vCampoBusca = nil) or not vCampoBusca.Mapeado then
+            Adicionar(gvErro, vCampo.CampoDestino,
+              Format('Generator se vazio: o campo de busca %s não está mapeado.', [vColuna]))
+          else if (vCampoBusca = vCampo) or (vCampoBusca.Origem = ovGerado) then
+            Adicionar(gvErro, vCampo.CampoDestino,
+              Format('Generator se vazio: o campo de busca %s não pode ser gerado nem o próprio campo.', [vColuna]));
+        end;
+      end;
   end;
 
   // Campos-chave: identificam o registro para saber se ele já existe no destino

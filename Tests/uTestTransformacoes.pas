@@ -47,6 +47,7 @@ type
     procedure TestSomarSubtrairColuna;
     procedure TestSomarSubtrairColunaErros;
     procedure TestValorPadraoSeVazio;
+    procedure TestGeneratorSeVazio;
   end;
 
 implementation
@@ -552,6 +553,40 @@ begin
   CheckFalse(vResultado.Sucesso, 'Sem o nome da coluna deveria dar erro');
   vResultado := Aplicar(ttSomarColuna, 10.0, 'Texto', nil);
   CheckFalse(vResultado.Sucesso, 'Sem acesso às colunas deveria dar erro');
+end;
+
+procedure TTestTransformacoes.TestGeneratorSeVazio;
+const
+  cPARAMETRO = 'GEN_FORNECEDOR;RAZAO_SOCIAL';
+var
+  vGenerator: string;
+  vCampos: TArray<string>;
+  vLista: TArray<TTransformacao>;
+begin
+  VerificarOk(ttGeneratorSeVazio, Null, Null, cPARAMETRO);
+  VerificarOk(ttGeneratorSeVazio, '   ', Null, cPARAMETRO);
+  VerificarOk(ttGeneratorSeVazio, '00000000000000', Null, cPARAMETRO);
+  VerificarOk(ttGeneratorSeVazio, '00.000.000/0000-00', Null, cPARAMETRO);
+  VerificarOk(ttGeneratorSeVazio, 0, Null, cPARAMETRO);
+  VerificarOk(ttGeneratorSeVazio, '12194177000155', '12194177000155', cPARAMETRO);
+  VerificarOk(ttGeneratorSeVazio, 'ABC0', 'ABC0', cPARAMETRO);
+  VerificarErro(ttGeneratorSeVazio, Null, '');
+  VerificarErro(ttGeneratorSeVazio, '123', ' ;RAZAO_SOCIAL');
+
+  LerGeneratorSeVazio(' gen_fornecedor ; razao_social ;; fantasia ', vGenerator, vCampos);
+  CheckEquals('GEN_FORNECEDOR', vGenerator);
+  CheckEquals(2, Length(vCampos));
+  CheckEquals('RAZAO_SOCIAL', vCampos[0]);
+  CheckEquals('FANTASIA', vCampos[1]);
+
+  LerGeneratorSeVazio('GEN_FORNECEDOR', vGenerator, vCampos);
+  CheckEquals('GEN_FORNECEDOR', vGenerator);
+  CheckEquals(0, Length(vCampos));
+
+  vLista := TextoParaTransformacoes('GENERATOR_SE_VAZIO|' + cPARAMETRO);
+  CheckEquals(1, Length(vLista));
+  CheckTrue(vLista[0].Tipo = ttGeneratorSeVazio);
+  CheckEquals('GENERATOR_SE_VAZIO|' + cPARAMETRO, TransformacoesParaTexto(vLista));
 end;
 
 procedure TTestTransformacoes.TestValorPadraoSeVazio;

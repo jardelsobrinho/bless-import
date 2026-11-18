@@ -55,6 +55,8 @@ type
     procedure TestValidarConsultaSql;
     procedure TestTransformacaoValorPadrao;
     procedure TestValidarTransformacaoValorPadrao;
+    procedure TestGeneratorSeVazio;
+    procedure TestValidarGeneratorSeVazio;
   end;
 
 implementation
@@ -566,6 +568,117 @@ begin
     CheckTrue(vResultado.Fonte = fvGerado);
   finally
     vCampo.Free;
+  end;
+end;
+
+procedure TTestImportador.TestGeneratorSeVazio;
+var
+  vCampo: TCampoPerfil;
+  vDestino: TCampoDestino;
+  vResultado: TValorResolvido;
+begin
+  vDestino := Destino('CGC', 'VARCHAR(14)', ccTexto, 14, 0, True);
+  vCampo := TCampoPerfil.Create('CGC');
+  try
+    vCampo.Origem := ovColuna;
+    vCampo.Coluna := 'CNPJ';
+    vCampo.Transformacoes := [Transformacao(ttCpfCnpj),
+      Transformacao(ttGeneratorSeVazio, 'GEN_FORNECEDOR;RAZAO_SOCIAL')];
+
+    // Em branco: obrigatório não dá erro, o número vem do generator ao gravar
+    Linha(['CNPJ'], ['']);
+    vResultado := Resolver(vCampo, vDestino);
+    CheckTrue(vResultado.Ok, vResultado.Mensagem);
+    CheckTrue(vResultado.Fonte = fvGerado, 'Em branco é gerado');
+    CheckEquals('GEN_FORNECEDOR', vResultado.Generator);
+    CheckEquals(1, Length(vResultado.CamposBusca));
+    CheckEquals('RAZAO_SOCIAL', vResultado.CamposBusca[0]);
+
+    // Zerado conta como branco
+    Linha(['CNPJ'], ['00.000.000/0000-00']);
+    vResultado := Resolver(vCampo, vDestino);
+    CheckTrue(vResultado.Ok, vResultado.Mensagem);
+    CheckTrue(vResultado.Fonte = fvGerado, 'Zerado é gerado');
+
+    // Preenchido segue normal
+    Linha(['CNPJ'], ['12.194.177/0001-55']);
+    vResultado := Resolver(vCampo, vDestino);
+    CheckTrue(vResultado.Ok, vResultado.Mensagem);
+    CheckTrue(vResultado.Fonte = fvColuna, 'Preenchido vem da planilha');
+    CheckEquals('12194177000155', VarToStr(vResultado.Valor));
+    CheckEquals('', vResultado.Generator);
+
+    // CNPJ inválido continua sendo erro: não vira número gerado
+    Linha(['CNPJ'], ['12.194.177/0001-00']);
+    vResultado := Resolver(vCampo, vDestino);
+    CheckFalse(vResultado.Ok, 'CNPJ inválido');
+    CheckTrue(vResultado.TipoErro = teTransformacao);
+  finally
+    vCampo.Free;
+  end;
+end;
+
+procedure TTestImportador.TestValidarGeneratorSeVazio;
+var
+  vPerfil: TPerfil;
+  vDestinos: TArray<TCampoDestino>;
+  vProblemas: TArray<TProblemaPerfil>;
+
+  function Validar: TArray<TProblemaPerfil>;
+  begin
+    Result := ValidarPerfil(vPerfil, True, vDestinos, True, ['CNPJ', 'Razao'], ['GEN_FORNECEDOR'], ['FORNECEDOR']);
+  end;
+
+begin
+  vDestinos := [Destino('CGC', 'VARCHAR(14)', ccTexto, 14, 0, True), Destino('CODIGO', 'INTEGER', ccInteiro),
+    Destino('RAZAO_SOCIAL', 'VARCHAR(100)', ccTexto, 100), Destino('FANTASIA', 'VARCHAR(100)', ccTexto, 100),
+    Destino('DATA_CAD', 'DATE', ccData)];
+  vPerfil := TPerfil.Create;
+  try
+    vPerfil.TabelaDestino := 'FORNECEDOR';
+    vPerfil.Estrategia := egIgnorarExistentes;
+    vPerfil.CamposChave := 'CGC';
+    vPerfil.AdicionarCampo('CGC').Origem := ovColuna;
+    vPerfil.CampoPorNome('CGC').Coluna := 'CNPJ';
+    vPerfil.AdicionarCampo('CODIGO').Origem := ovGerado;
+    vPerfil.CampoPorNome('CODIGO').Generator := 'GEN_FORNECEDOR';
+    vPerfil.AdicionarCampo('RAZAO_SOCIAL').Origem := ovColuna;
+    vPerfil.CampoPorNome('RAZAO_SOCIAL').Coluna := 'Razao';
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := [Transformacao(ttCpfCnpj),
+      Transformacao(ttGeneratorSeVazio, 'GEN_FORNECEDOR;RAZAO_SOCIAL')];
+    vProblemas := Validar;
+    CheckEquals(0, Length(vProblemas), 'Configuração correta');
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := [Transformacao(ttGeneratorSeVazio, 'GEN_FORNECEDOR;RAZAO_SOCIAL'),
+      Transformacao(ttCpfCnpj)];
+    CheckTrue(TemProblema(Validar, gvErro, 'CGC', 'última'), 'Precisa ser a última');
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := [Transformacao(ttGeneratorSeVazio, 'GEN_X;RAZAO_SOCIAL')];
+    CheckTrue(TemProblema(Validar, gvErro, 'CGC', 'GEN_X'), 'Generator inexistente');
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := [Transformacao(ttGeneratorSeVazio, ';RAZAO_SOCIAL')];
+    CheckTrue(TemProblema(Validar, gvErro, 'CGC', 'informe o generator'), 'Sem generator');
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := [Transformacao(ttGeneratorSeVazio, 'GEN_FORNECEDOR')];
+    CheckTrue(TemProblema(Validar, gvErro, 'CGC', 'campo é chave'), 'Chave sem campo de busca');
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := [Transformacao(ttGeneratorSeVazio, 'GEN_FORNECEDOR;NAO_EXISTE')];
+    CheckTrue(TemProblema(Validar, gvErro, 'CGC', 'NAO_EXISTE'), 'Campo de busca inexistente');
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := [Transformacao(ttGeneratorSeVazio, 'GEN_FORNECEDOR;FANTASIA')];
+    CheckTrue(TemProblema(Validar, gvErro, 'CGC', 'não está mapeado'), 'Campo de busca sem mapeamento');
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := [Transformacao(ttGeneratorSeVazio, 'GEN_FORNECEDOR;CODIGO')];
+    CheckTrue(TemProblema(Validar, gvErro, 'CGC', 'não pode ser gerado'), 'Campo de busca gerado');
+
+    vPerfil.CampoPorNome('CGC').Transformacoes := nil;
+    vPerfil.AdicionarCampo('DATA_CAD').Origem := ovColuna;
+    vPerfil.CampoPorNome('DATA_CAD').Coluna := 'Razao';
+    vPerfil.CampoPorNome('DATA_CAD').Transformacoes := [Transformacao(ttGeneratorSeVazio, 'GEN_FORNECEDOR')];
+    CheckTrue(TemProblema(Validar, gvErro, 'DATA_CAD', 'inteiro ou texto'), 'Campo de data');
+  finally
+    vPerfil.Free;
   end;
 end;
 

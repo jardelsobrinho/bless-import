@@ -35,7 +35,8 @@ type
     ttNumeroExcelParaData,
     ttSomarColuna,
     ttSubtrairColuna,
-    ttValorPadraoSeVazio);
+    ttValorPadraoSeVazio,
+    ttGeneratorSeVazio);
 
   TTransformacao = record
     Tipo: TTipoTransformacao;
@@ -95,7 +96,10 @@ const
     (Codigo: 'SUBTRAIR_COLUNA'; Nome: 'Subtrair coluna';
       AjudaParametro: 'Nome da coluna subtraída do valor (coluna vazia conta como 0)'),
     (Codigo: 'VALOR_PADRAO_SE_VAZIO'; Nome: 'Valor padrão se vazio';
-      AjudaParametro: 'Valor usado quando o valor estiver nulo ou em branco (só espaços)'));
+      AjudaParametro: 'Valor usado quando o valor estiver nulo ou em branco (só espaços)'),
+    (Codigo: 'GENERATOR_SE_VAZIO'; Nome: 'Generator se vazio';
+      AjudaParametro: 'GENERATOR;CAMPO_DE_BUSCA, ex.: GEN_FORNECEDOR;RAZAO_SOCIAL. Em branco ou só zeros recebe o ' +
+      'número do generator (o mesmo dos outros campos gerados por ele na linha). Deve ser a última da lista'));
 
 function Transformar(ATipo: TTipoTransformacao; const AValor: Variant; const AParametro: string;
   AObterColuna: TObterValorColuna = nil): TResultadoTransformacao;
@@ -126,7 +130,13 @@ function EhData(const AValor: Variant): Boolean;
 // Nomes de coluna citados num modelo de concatenação/expressão ({Coluna}), sem o {valor} e sem repetir
 function ColunasDoModelo(const AModelo: string): TArray<string>;
 
+// Parâmetro de "Generator se vazio": "GENERATOR;CAMPO1;CAMPO2" (nomes em maiúsculas, sem espaços nas pontas)
+procedure LerGeneratorSeVazio(const AParametro: string; out AGenerator: string; out ACamposBusca: TArray<string>);
+
 implementation
+
+uses
+  System.Character;
 
 var
   GFormatoInvariante: TFormatSettings;
@@ -699,6 +709,52 @@ begin
   Result := vDigito = StrToInt(ADigitos[14]);
 end;
 
+procedure LerGeneratorSeVazio(const AParametro: string; out AGenerator: string; out ACamposBusca: TArray<string>);
+var
+  vPartes: TArray<string>;
+  i: Integer;
+begin
+  AGenerator := '';
+  ACamposBusca := nil;
+  vPartes := AParametro.Split([';']);
+  if Length(vPartes) = 0 then
+    Exit;
+  AGenerator := UpperCase(Trim(vPartes[0]));
+  for i := 1 to High(vPartes) do
+    if Trim(vPartes[i]) <> '' then
+      ACamposBusca := ACamposBusca + [UpperCase(Trim(vPartes[i]))];
+end;
+
+// Em branco ou documento zerado (só zeros, com ou sem pontuação); texto com letras não é zerado
+function VazioOuZerado(const AValor: Variant): Boolean;
+var
+  vTexto, vDigitos: string;
+  vCaractere: Char;
+begin
+  if EhVazio(AValor) then
+    Exit(True);
+  vTexto := Trim(VarToStr(AValor));
+  for vCaractere in vTexto do
+    if vCaractere.IsLetter then
+      Exit(False);
+  vDigitos := SomenteDigitos(vTexto);
+  Result := (vDigitos <> '') and (vDigitos = StringOfChar('0', Length(vDigitos)));
+end;
+
+function GeneratorSeVazio(const AValor: Variant; const AParametro: string): TResultadoTransformacao;
+var
+  vGenerator: string;
+  vCamposBusca: TArray<string>;
+begin
+  LerGeneratorSeVazio(AParametro, vGenerator, vCamposBusca);
+  if vGenerator = '' then
+    Exit(Erro('Informe o generator no parâmetro.'));
+  if VazioOuZerado(AValor) then
+    Result := Ok(Null)
+  else
+    Result := Ok(AValor);
+end;
+
 function ConverterCpfCnpj(const AValor: Variant; const AParametro: string): TResultadoTransformacao;
 var
   vParametro, vOriginal, vDigitos: string;
@@ -1125,6 +1181,8 @@ begin
         Result := Ok(AParametro)
       else
         Result := Ok(AValor);
+    ttGeneratorSeVazio:
+      Result := GeneratorSeVazio(AValor, AParametro);
   else
     Result := Erro('Transformação desconhecida.');
   end;

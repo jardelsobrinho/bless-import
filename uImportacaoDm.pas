@@ -473,11 +473,31 @@ var
     vQryErro.ExecSQL;
   end;
 
-  function EhChave(AIndice: Integer): Boolean;
+  // Campos que localizam o registro desta linha: a chave do perfil ou, se a chave veio vazia e será gerada
+  // ("Generator se vazio"), os campos de busca informados na transformação
+  function IndicesDaChave(const ALinha: TResultadoLinha): TArray<Integer>;
+  var
+    vIndice, i: Integer;
+    vNome: string;
+  begin
+    Result := vIndicesChave;
+    for vIndice in vIndicesChave do
+      if ALinha.Valores[vIndice].Fonte = fvGerado then
+      begin
+        Result := nil;
+        for vNome in ALinha.Valores[vIndice].CamposBusca do
+          for i := 0 to High(vCampos) do
+            if SameText(vCampos[i].CampoDestino, vNome) then
+              Result := Result + [i];
+        Exit;
+      end;
+  end;
+
+  function EhChave(const AIndices: TArray<Integer>; AIndice: Integer): Boolean;
   var
     vIndice: Integer;
   begin
-    for vIndice in vIndicesChave do
+    for vIndice in AIndices do
       if vIndice = AIndice then
         Exit(True);
     Result := False;
@@ -488,7 +508,7 @@ var
     i: Integer;
   begin
     Result := '';
-    for i in vIndicesChave do
+    for i in IndicesDaChave(ALinha) do
     begin
       if Result <> '' then
         Result := Result + '; ';
@@ -501,12 +521,32 @@ var
     vChaves, vCamposGravar: TArray<TCampoDestino>;
     vValoresChave, vValoresGravar: TArray<Variant>;
     vValor: TValorResolvido;
+    vIndices: TArray<Integer>;
+    vGeneratorsUsados: TArray<string>;
+    vNumerosGerados: TArray<Int64>;
     vQuantidade, i: Integer;
+
+    // Um número por generator em cada linha: todos os campos gerados por ele recebem o mesmo valor
+    function NumeroGerado(const AGenerator: string): Int64;
+    var
+      vPosicao: Integer;
+    begin
+      for vPosicao := 0 to High(vGeneratorsUsados) do
+        if SameText(vGeneratorsUsados[vPosicao], AGenerator) then
+          Exit(vNumerosGerados[vPosicao]);
+      Result := FDmDestino.ProximoValor(AGenerator);
+      vGeneratorsUsados := vGeneratorsUsados + [AGenerator];
+      vNumerosGerados := vNumerosGerados + [Result];
+    end;
+
   begin
     AMotivo := '';
     vChaves := nil;
     vValoresChave := nil;
-    for i in vIndicesChave do
+    vGeneratorsUsados := nil;
+    vNumerosGerados := nil;
+    vIndices := IndicesDaChave(ALinha);
+    for i in vIndices do
     begin
       vChaves := vChaves + [vDestinos[i]];
       vValoresChave := vValoresChave + [ALinha.Valores[i].Valor];
@@ -518,7 +558,7 @@ var
       vQuantidade := FDmDestino.ContarRegistros(FPerfil.TabelaDestino, vChaves, vValoresChave);
       if vQuantidade > 1 then
         raise Exception.CreateFmt('os campos-chave (%s) identificam %d registros no destino; a linha não foi gravada',
-          [FPerfil.CamposChave, vQuantidade]);
+          [TextoDaChave(ALinha), vQuantidade]);
     end;
     if (FPerfil.Estrategia = egIgnorarExistentes) and (vQuantidade = 1) then
     begin
@@ -540,7 +580,7 @@ var
       for i := 0 to High(vCampos) do
       begin
         vValor := ALinha.Valores[i];
-        if EhChave(i) or (vValor.Fonte = fvGerado) or VarIsNull(vValor.Valor) then
+        if EhChave(vIndices, i) or (vValor.Fonte = fvGerado) or VarIsNull(vValor.Valor) then
           Continue;
         vCamposGravar := vCamposGravar + [vDestinos[i]];
         vValoresGravar := vValoresGravar + [vValor.Valor];
@@ -561,7 +601,10 @@ var
       if vValor.Fonte = fvGerado then
       begin
         vCamposGravar := vCamposGravar + [vDestinos[i]];
-        vValoresGravar := vValoresGravar + [FDmDestino.ProximoValor(vCampos[i].Generator)];
+        if vDestinos[i].Categoria in [ccTexto, ccTextoLongo] then
+          vValoresGravar := vValoresGravar + [IntToStr(NumeroGerado(vValor.Generator))]
+        else
+          vValoresGravar := vValoresGravar + [NumeroGerado(vValor.Generator)];
       end
       else if VarIsNull(vValor.Valor) and (vDestinos[i].Padrao <> '') then
         Continue
@@ -653,7 +696,7 @@ begin
                 RegistrarErro(vLinha, vValor.Campo, vValor.TipoErro, vValor.ValorRecebido, vValor.Mensagem);
 
           if not vErroNaLinha then
-            for i in vIndicesChave do
+            for i in IndicesDaChave(vResultado) do
               if VarIsNull(vResultado.Valores[i].Valor) then
               begin
                 RegistrarErro(vLinha, vCampos[i].CampoDestino, teValidacao, vResultado.Valores[i].ValorRecebido,

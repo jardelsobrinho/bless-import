@@ -405,7 +405,7 @@ begin
         grdErros.Objects[1, vLinhaErro] := TObject(c);
       end
       else if vValor.Fonte = fvGerado then
-        vTexto := '(' + FCampos[c].Generator + ')'
+        vTexto := '(' + vValor.Generator + ')'
       else if VarIsNull(vValor.Valor) then
         vTexto := ''
       else
@@ -787,7 +787,7 @@ begin
       fvExpressao:
         vOrigem := Format('%s %s', [cFONTES[vValor.Fonte], vCampo.Expressao]);
       fvGerado:
-        vOrigem := Format('%s pelo %s', [cFONTES[vValor.Fonte], vCampo.Generator]);
+        vOrigem := Format('%s pelo %s', [cFONTES[vValor.Fonte], vValor.Generator]);
     else
       vOrigem := cFONTES[vValor.Fonte];
     end;
